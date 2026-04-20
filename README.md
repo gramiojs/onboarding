@@ -438,20 +438,6 @@ Set `errors: "throw"` on a flow if you want the loud version — useful in tests
 
 ---
 
-## Phases shipped
-
-- **Phase 1** — inline `text + buttons` steps, memory storage, full `ctx.onboarding.*` surface, stale-callback guard via `runId`, `onMissingStep` fallback, fire-and-forget wrapper.
-- **Phase 2** — `step.view` rendering via `ctx.render`, `this.onboarding` injection through `withOnboardingGlobals()`.
-- **Phase 3** — `advanceOn(ctx) => boolean` middleware with default-on passthrough; programmatic `next({ from })` with `step-mismatch` guard.
-- **Phase 4** — multi-flow concurrency (`queue` / `preempt` / `parallel`) with a per-user `FlowCoordinator`, FIFO queue + LIFO preempt stack persisted on `global:<scopeKey>`.
-- **Phase 5** — `renderIn` cross-chat scoping with `pendingStepId` re-render on the next eligible update; DM/group control defaults.
-- **Phase 6** — opt-out layer: `dismiss` / `undismiss` / `disableAll` / `enableAll` / `exitAll`, `opted-out` + `dismissed` start codes, `onDismiss` hook.
-- **Phase 7** — framework-agnostic `getStorageContractCases()` suite; any `Storage<OnboardingStorageMap>` adapter plugs into the `storage:` option.
-
-Phase 8 (docs-site page + AI-skill examples in the documentation repo) lands once the package is published.
-
----
-
 ## Development
 
 ```bash
