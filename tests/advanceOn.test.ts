@@ -81,8 +81,9 @@ describe("@gramio/onboarding — Phase 3 advanceOn middleware", () => {
 
 		await user.sendCommand("start");
 		// Jump past step 1 with a button click, so step 2 ("links") is active.
-		const hi = env.lastBotMessage();
-		await user.on(hi!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 
 		expect(lastText(env)).toBe("Send me any link!");
 
@@ -239,8 +240,9 @@ describe("@gramio/onboarding — Phase 3 next({ from }) programmatic advance", (
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const hi = env.lastBotMessage();
-		await user.on(hi!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 		await user.sendMessage("https://example.com/file.zip");
 
 		expect(nextResult === "advanced" || nextResult === "completed").toBe(true);
@@ -284,13 +286,7 @@ describe("@gramio/onboarding — Phase 3 next({ from }) programmatic advance", (
 		await user.sendCommand("probe");
 
 		expect(result).toBe("step-mismatch");
-		expect(
-			(
-				env as unknown as {
-					lastBotMessage(): { payload: { text: string } } | undefined;
-				}
-			).lastBotMessage()?.payload.text,
-		).toBe("result:step-mismatch");
+		expect(env.lastBotMessage()?.payload.text).toBe("result:step-mismatch");
 	});
 
 	it("next() when no flow is active returns inactive", async () => {

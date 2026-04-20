@@ -9,16 +9,20 @@
       },
       "devDependencies": {
         "@biomejs/biome": "1.9.4",
-        "@gramio/test": "^0.3.1",
-        "@gramio/views": "^0.0.4",
+        "@gramio/test": "^0.7.0",
+        "@gramio/views": "^0.2.0",
         "@types/bun": "^1.3.10",
         "gramio": "^0.9.0",
         "pkgroll": "^2.27.0",
         "typescript": "^5.7.2",
       },
       "peerDependencies": {
+        "@gramio/views": ">=0.2.0",
         "gramio": ">=0.7.0",
       },
+      "optionalPeers": [
+        "@gramio/views",
+      ],
     },
   },
   "packages": {
@@ -106,11 +110,11 @@
 
     "@gramio/storage": ["@gramio/storage@2.0.1", "", {}, "sha512-aUZM3PCfvtKisMXvJyTwothKNJygaocuCJ4D4rvibdqfv6XnU2retVMOt7RTFM1BOEyVVByfaqkAXcZ1z6NsEw=="],
 
-    "@gramio/test": ["@gramio/test@0.3.1", "", { "peerDependencies": { "@gramio/types": "^9.4.2", "gramio": "^0.6.0" } }, "sha512-1JPFk5V/OP0v9ePPAr+tP5AdjfbnuS/SKtqSz1QzAJIwMGuhf9VqOa8eEOpCtKcK8aofPmJKypm4RZ13pf70PQ=="],
+    "@gramio/test": ["@gramio/test@0.7.0", "", { "peerDependencies": { "@gramio/types": "*", "gramio": ">=0.6.0 <1.0.0" } }, "sha512-nWYcLB0bzTJOmhwie8LLElYI/Nwq56dhDbVsT+o1sFUUM0OD6ztubYkMf+AW2mDEWfRf+WJBNDCYuILTRGUpxQ=="],
 
     "@gramio/types": ["@gramio/types@9.6.1", "", {}, "sha512-O/tJgU98oiCVcQHXO/yyJgEn5DpIZr/OiuRp3CxIGynRLK2doWguOR+jlRZQNMR5sx5VTVBBCAPRNRJ8qBLEKw=="],
 
-    "@gramio/views": ["@gramio/views@0.0.4", "", { "peerDependencies": { "gramio": "^0.4.10" } }, "sha512-0xF2QnXAdR8IAinSBFsstKQM3a2ajLgjjKIAJShOzjQigMVFlbrh/OrVsYtBT+vQrz1EGtiotvcs5VSA4WsyTQ=="],
+    "@gramio/views": ["@gramio/views@0.2.0", "", { "peerDependencies": { "gramio": ">=0.4.10 <1.0.0" } }, "sha512-Kyk9tPEvLRqOSQZRdQSPfoVhT8LdpZIgLSnN2zgvlEFqrtQRyxruXMrTurO3RJjZ0kjVTTEw/Z2cMRoltYIwbA=="],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 

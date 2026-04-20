@@ -76,8 +76,9 @@ describe("@gramio/onboarding — Phase 4 concurrency: queue (default)", () => {
 		expect(allTexts(env)).not.toContain("premium-perks");
 
 		// Complete welcome by clicking through to the terminal step.
-		const hi = env.lastBotMessage();
-		await user.on(hi!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 
 		// After welcome.complete the coordinator should dequeue + start premium.
 		const texts = allTexts(env);
@@ -122,11 +123,17 @@ describe("@gramio/onboarding — Phase 4 concurrency: queue (default)", () => {
 		await user.sendCommand("go");
 
 		// Click Next on welcome → completes welcome → coord starts premium.
-		await user.on(env.lastBotMessage()!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 		// Click Next on premium → completes premium → coord starts farewell.
-		await user.on(env.lastBotMessage()!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 		// Click Next on farewell → completes it (queue drained).
-		await user.on(env.lastBotMessage()!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 
 		const orderedStepTexts = allTexts(env).filter((t) =>
 			["welcome-x", "premium-x", "farewell-x"].includes(t),
@@ -189,13 +196,17 @@ describe("@gramio/onboarding — Phase 4 concurrency: preempt", () => {
 
 		// Click Next on announce → completes → coord pops preemptStack and
 		// resumes welcome, re-rendering its current step ("welcome-a").
-		await user.on(env.lastBotMessage()!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 		expect(
 			allTexts(env).filter((t) => t === "welcome-a").length,
 		).toBeGreaterThanOrEqual(2);
 
 		// Welcome is active again; clicking Next advances it to "welcome-b".
-		await user.on(env.lastBotMessage()!).clickByText("Next");
+		await user
+			.on(env.lastBotMessage({ withReplyMarkup: true })!)
+			.clickByText("Next");
 		expect(allTexts(env)).toContain("welcome-b");
 	});
 });

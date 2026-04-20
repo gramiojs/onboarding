@@ -16,28 +16,17 @@ const flatButtons = (rm: unknown) =>
 	(rm as TelegramInlineKeyboardMarkup).inline_keyboard.flat();
 
 /**
- * Pin the bot bubble whose `sendMessage` had `text`. Returns a live
- * `MessageObject` tracked by `env.botMessage(...)` — its `reply_markup`
- * auto-updates on `editMessageText` / `editMessageReplyMarkup`, so the
- * returned reference can be re-clicked after edits without refresh.
- *
- * We need this (vs. plain `env.lastBotMessage()`) because the `/start`
- * handler sends a trailing confirmation message AFTER `onboarding.start()`,
- * making "last" the wrong bubble.
+ * Pin the bot bubble whose `sendMessage` had `text`. Needed (vs. plain
+ * `env.lastBotMessage()`) because the `/start` handler sends a trailing
+ * confirmation message AFTER `onboarding.start()`, making "last" the
+ * wrong bubble.
  */
 const bubbleByText = (env: TelegramTestEnvironment, text: string) => {
-	for (let i = env.apiCalls.length - 1; i >= 0; i--) {
-		const call = env.apiCalls[i]!;
-		if (call.method !== "sendMessage") continue;
-		if ((call.params as { text?: string }).text !== text) continue;
-		const chatId = (call.params as { chat_id: number }).chat_id;
-		const messageId = (call.response as { message_id?: number } | undefined)
-			?.message_id;
-		if (messageId === undefined) continue;
-		const msg = env.botMessage(chatId, messageId);
-		if (msg) return msg;
-	}
-	throw new Error(`No bot bubble with text "${text}" recorded`);
+	const msg = env.lastBotMessage({
+		where: (c) => (c.params as { text?: string }).text === text,
+	});
+	if (!msg) throw new Error(`No bot bubble with text "${text}" recorded`);
+	return msg;
 };
 
 const lastSentText = (env: TelegramTestEnvironment): string | undefined => {
