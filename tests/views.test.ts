@@ -15,8 +15,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const flatButtons = (rm: unknown) =>
-	(JSON.parse(JSON.stringify(rm)) as TelegramInlineKeyboardMarkup)
-		.inline_keyboard.flat();
+	(rm as TelegramInlineKeyboardMarkup).inline_keyboard.flat();
 
 interface ViewGlobals {
 	greeting: string;

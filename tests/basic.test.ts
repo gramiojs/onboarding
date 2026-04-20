@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { MessageObject, TelegramTestEnvironment } from "@gramio/test";
+import { TelegramTestEnvironment } from "@gramio/test";
 import type { TelegramInlineKeyboardMarkup } from "@gramio/types";
 import { Bot } from "gramio";
 import {
@@ -12,10 +12,33 @@ import {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const asInlineMarkup = (rm: unknown): TelegramInlineKeyboardMarkup =>
-	JSON.parse(JSON.stringify(rm)) as TelegramInlineKeyboardMarkup;
+const flatButtons = (rm: unknown) =>
+	(rm as TelegramInlineKeyboardMarkup).inline_keyboard.flat();
 
-const flatButtons = (rm: unknown) => asInlineMarkup(rm).inline_keyboard.flat();
+/**
+ * Pin the bot bubble whose `sendMessage` had `text`. Returns a live
+ * `MessageObject` tracked by `env.botMessage(...)` — its `reply_markup`
+ * auto-updates on `editMessageText` / `editMessageReplyMarkup`, so the
+ * returned reference can be re-clicked after edits without refresh.
+ *
+ * We need this (vs. plain `env.lastBotMessage()`) because the `/start`
+ * handler sends a trailing confirmation message AFTER `onboarding.start()`,
+ * making "last" the wrong bubble.
+ */
+const bubbleByText = (env: TelegramTestEnvironment, text: string) => {
+	for (let i = env.apiCalls.length - 1; i >= 0; i--) {
+		const call = env.apiCalls[i]!;
+		if (call.method !== "sendMessage") continue;
+		if ((call.params as { text?: string }).text !== text) continue;
+		const chatId = (call.params as { chat_id: number }).chat_id;
+		const messageId = (call.response as { message_id?: number } | undefined)
+			?.message_id;
+		if (messageId === undefined) continue;
+		const msg = env.botMessage(chatId, messageId);
+		if (msg) return msg;
+	}
+	throw new Error(`No bot bubble with text "${text}" recorded`);
+};
 
 const lastSentText = (env: TelegramTestEnvironment): string | undefined => {
 	for (let i = env.apiCalls.length - 1; i >= 0; i--) {
@@ -25,61 +48,6 @@ const lastSentText = (env: TelegramTestEnvironment): string | undefined => {
 		}
 	}
 	return undefined;
-};
-
-/**
- * Build a MessageObject mirror of the bot's last `sendMessage` reply matching
- * `text`, so `user.on(msg).clickByText(...)` and edit-callback tracking work.
- */
-const bubbleFromLastSend = (
-	env: TelegramTestEnvironment,
-	text: string,
-	chatId: number,
-): MessageObject => {
-	const sends = env.apiCalls.filter(
-		(c) =>
-			c.method === "sendMessage" &&
-			(c.params as { text?: string }).text === text,
-	);
-	const last = sends[sends.length - 1];
-	if (!last) throw new Error(`No sendMessage with text "${text}" recorded`);
-	const params = last.params as {
-		text: string;
-		reply_markup?: unknown;
-		chat_id: number;
-	};
-	const response = last.response as { message_id?: number } | undefined;
-	return new MessageObject({
-		message_id: response?.message_id ?? 1,
-		date: Math.floor(Date.now() / 1e3),
-		chat: { id: chatId, type: "private", first_name: "Test" },
-		from: { id: 1, is_bot: true, first_name: "Bot" },
-		text: params.text,
-		// `InlineKeyboard` only exposes `inline_keyboard` via its `toJSON()`.
-		// Roundtrip so `clickByText`'s `"inline_keyboard" in markup` check passes.
-		reply_markup: params.reply_markup
-			? (JSON.parse(JSON.stringify(params.reply_markup)) as never)
-			: undefined,
-	});
-};
-
-const refreshBubbleFromLastEdit = (
-	env: TelegramTestEnvironment,
-	bubble: MessageObject,
-): void => {
-	for (let i = env.apiCalls.length - 1; i >= 0; i--) {
-		const call = env.apiCalls[i]!;
-		if (call.method !== "editMessageText") continue;
-		const editParams = call.params as {
-			text: string;
-			reply_markup?: unknown;
-		};
-		bubble.payload.text = editParams.text;
-		bubble.payload.reply_markup = editParams.reply_markup
-			? (JSON.parse(JSON.stringify(editParams.reply_markup)) as never)
-			: undefined;
-		return;
-	}
 };
 
 const buildBasicBot = () => {
@@ -144,11 +112,7 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
 		await user.on(bubble).clickByText("Next");
 
 		expect(lastSentText(env)).toBe("Send any link!");
@@ -160,16 +124,9 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
 		await user.on(bubble).clickByText("Next");
-
-		// After edit, the same bubble is re-used by the runner. Refresh its
-		// reply_markup from the latest editMessageText call.
-		refreshBubbleFromLastEdit(env, bubble);
+		// Same bubble, mutated in place by the proxy after editMessageText.
 		await user.on(bubble).clickByText("Next");
 
 		const allTexts = env.apiCalls
@@ -187,11 +144,7 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
 		await user.on(bubble).clickByText("Exit");
 
 		const sent = env.apiCalls
@@ -206,14 +159,8 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
 		await user.on(bubble).clickByText("Next"); // → "Send any link!"
-
-		refreshBubbleFromLastEdit(env, bubble);
 		await user.on(bubble).clickByText("Don't show again");
 
 		env.clearApiCalls();
@@ -233,15 +180,8 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
 		await user.on(bubble).clickByText("Next");
-
-		// Refresh + click "Don't show again" on step 2.
-		refreshBubbleFromLastEdit(env, bubble);
 		await user.on(bubble).clickByText("Don't show again");
 
 		env.clearApiCalls();
@@ -269,23 +209,24 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		expect(sent).not.toContain("Hi! Press next to continue.");
 	});
 
-	it("double-click on Next is idempotent (stale stepId is no-op)", async () => {
+	it("stale callback (replayed step-1 token) is a no-op after advancing", async () => {
 		const { bot } = buildBasicBot();
 		const env = new TelegramTestEnvironment(bot);
 		const user = env.createUser();
 
 		await user.sendCommand("start");
-		const bubble = bubbleFromLastSend(
-			env,
-			"Hi! Press next to continue.",
-			user.payload.id,
-		);
-		await user.on(bubble).clickByText("Next");
+		const bubble = bubbleByText(env, "Hi! Press next to continue.");
+		// Snapshot step-1's "Next" callback_data BEFORE we advance — once we
+		// click, the bubble auto-syncs to step-2's keyboard and the original
+		// token is gone from the live keyboard. This simulates a user clicking
+		// a button whose callback data was minted for the previous step (e.g.
+		// double-tap before Telegram delivered the edit, or a cached client).
+		const staleNext = flatButtons(bubble.payload.reply_markup).find(
+			(b) => b.text === "Next",
+		)!.callback_data!;
 
-		// Re-click with the *stale* keyboard (still pointing at step "hi"). The
-		// runner should silently no-op because the token's stepId no longer
-		// matches the stored one.
-		await user.on(bubble).clickByText("Next").catch(() => undefined);
+		await user.on(bubble).clickByText("Next");
+		await user.click(staleNext, bubble).catch(() => undefined);
 
 		const distinct = new Set(
 			env.apiCalls
