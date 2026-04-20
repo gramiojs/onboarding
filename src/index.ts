@@ -31,6 +31,10 @@ export type {
 } from "./builder.js";
 
 export { memoryStorage } from "./storage/memory.js";
+export {
+	getStorageContractCases,
+	type StorageContractCase,
+} from "./storage/contract.js";
 
 export {
 	withOnboardingGlobals,
