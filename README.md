@@ -10,30 +10,28 @@ import { createOnboarding } from "@gramio/onboarding";
 
 const welcome = createOnboarding({ id: "welcome" })
     .step("hi",    { text: "Hi! I'll show you around.", buttons: ["next", "exit"] })
-    .step("links", {
-        text: "Send me any link — I'll download it.",
-        advanceOn: (ctx) => /https?:\/\//.test(ctx.text ?? ""),
-    })
+    .step("links", { text: "Send me any link — I'll download it." })
     .step("done",  { text: "All set!" })
     .onComplete((ctx) => ctx.send("Welcome aboard! /help is always available."))
     .build();
 
 const bot = new Bot(process.env.BOT_TOKEN!).extend(welcome);
 
-bot.command("start", (ctx) => {
-    ctx.onboarding.welcome.start();
-    return ctx.send("Let's start!");
+bot.command("start", async (ctx) => {
+    await ctx.send("Let's start!");
+    ctx.onboarding.welcome.start();   // fire-and-forget; bubble follows the reply
 });
 
 bot.on("message", async (ctx, next) => {
-    if (/https?:\/\//.test(ctx.text ?? "")) await ctx.send("Downloading…");
-    return next();
+    if (!/https?:\/\//.test(ctx.text ?? "")) return next();
+    await ctx.send("Downloading…");
+    ctx.onboarding.welcome.next({ from: "links" });   // no await; "All set!" follows
 });
 
 bot.start();
 ```
 
-The second step auto-advances when the user sends a real link. Your business handler still runs after the step advances (the default `passthrough: true`), so the user sees both "Downloading…" and "All set!" without any glue code.
+Reply first, then hand off to the flow — `ctx.onboarding.*` never rejects, so there's no reason to `await` it. The `{ from: "links" }` guard is idempotent: if the user somehow double-triggers the advance, only one step-change happens.
 
 ---
 
@@ -173,43 +171,47 @@ bot.command("start", (ctx) => {
 
 Three ways to advance — pick whichever fits:
 
-### 1. Button callback
+### 1. Programmatic `next({ from })` from inside a handler (recommended)
+
+The business handler owns the reply and the advance. Send your response first, then fire-and-forget the onboarding transition — the bubble follows the reply automatically.
 
 ```ts
-.step("hi", { text: "Hi!", buttons: ["next"] })
+bot.on("message", async (ctx, next) => {
+    if (!isLink(ctx.text)) return next();
+    await ctx.send("Downloading…");
+    ctx.onboarding.welcome.next({ from: "links" });   // no await
+});
 ```
 
-The built-in renderer ships `Next` / `Skip` / `Exit` / `Don't show again` buttons. Callback data is `onb:<op>:<flowId>:<runId>:<stepId>` — stale clicks after a force-restart safely no-op with "Already moving on".
+The `{ from: "links" }` guard makes it a no-op if the flow isn't on the `"links"` step — your handler stays valid even after a force-restart, a button click that already advanced, or a race with `advanceOn`.
 
-### 2. Declarative `advanceOn`
+`.next()` returns `"advanced" | "completed" | "inactive" | "step-mismatch"` if you *do* want to inspect the outcome:
 
-The step advances when the predicate matches an inbound message. By default the update **also** reaches your regular handlers (`passthrough: true`), so you don't have to duplicate logic:
+```ts
+const r = await ctx.onboarding.welcome.next({ from: "links" });
+if (r === "completed") logAnalytics("welcome.completed", ctx.from?.id);
+```
+
+### 2. Button callback
+
+```ts
+.step("hi", { text: "Hi!", buttons: ["next", "exit"] })
+```
+
+The built-in renderer ships `Next` / `Skip` / `Exit` / `Don't show again` buttons. Callback data is `onb:<op>:<flowId>:<runId>:<stepId>` — stale clicks after a force-restart safely no-op with "Already moving on". Buttons are the right pick for "intro" / "done" steps that aren't gated by a user action.
+
+### 3. Declarative `advanceOn` (when the predicate is the whole story)
+
+Drop the predicate on the step and the plugin installs a `message` middleware that runs it on every update while the flow is active:
 
 ```ts
 .step("links", {
     text: "Send me a link.",
     advanceOn: (ctx) => /https?:\/\//.test(ctx.text ?? ""),
 })
-
-bot.on("message", (ctx, next) => {
-    if (/https?:\/\//.test(ctx.text ?? "")) return ctx.send("Downloading…");
-    return next();
-});
 ```
 
-Set `passthrough: false` on the step to stop the update from falling through after a match.
-
-### 3. Programmatic from inside a handler
-
-```ts
-bot.on("message", async (ctx, next) => {
-    if (!isLink(ctx.text)) return next();
-    await ctx.onboarding.welcome.next({ from: "links" });
-    await ctx.send("Downloading…");
-});
-```
-
-The `{ from }` guard is idempotent with `advanceOn` — if both fire for the same update, only one advance happens.
+By default the update still reaches your regular handlers (`passthrough: true`), so you don't have to duplicate the predicate. Set `passthrough: false` on the step to suppress forwarding after a match. `advanceOn` is concise but spreads the "what happens next" across two places — prefer `next({ from })` when the same handler already produces the reply.
 
 ---
 
@@ -281,13 +283,22 @@ Two levels, because "I've seen this one" and "stop all tutorials forever" aren't
 
 ```ts
 // Per-flow — only this tutorial stops
-await ctx.onboarding.welcome.dismiss();   // onDismiss hook fires
-await ctx.onboarding.welcome.undismiss(); // reversible
+ctx.onboarding.welcome.dismiss();   // onDismiss hook fires
+ctx.onboarding.welcome.undismiss(); // reversible
 
 // Namespace-wide — every flow is blocked
-await ctx.onboarding.disableAll();        // start() returns "opted-out"
-await ctx.onboarding.enableAll();         // reversible
-await ctx.onboarding.exitAll();           // dismiss active + disableAll
+ctx.onboarding.disableAll();        // start() returns "opted-out" everywhere
+ctx.onboarding.enableAll();         // reversible
+ctx.onboarding.exitAll();           // dismiss active + disableAll
+```
+
+Fire-and-forget like every other `ctx.onboarding.*` method. Typical wiring:
+
+```ts
+bot.command("no_tutorials", async (ctx) => {
+    await ctx.send("Got it — I'll stop showing guides.");
+    ctx.onboarding.exitAll();
+});
 ```
 
 Expose them in the UI by listing `"dismiss"` in `buttons` (rendered as *Don't show again*), or by emitting an `exitAll` token from a view. `startImpl` checks `disabled` before `dismissed`, so after `exitAll` every flow returns `"opted-out"`.
