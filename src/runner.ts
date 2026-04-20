@@ -1,12 +1,7 @@
 import type { FlowDefinition } from "./builder.js";
 import { renderInline } from "./render/inline.js";
 import { renderView, shouldRenderViaViews } from "./render/views.js";
-import {
-	type DecodedToken,
-	type Op,
-	encode,
-	newRunId,
-} from "./tokens.js";
+import { type DecodedToken, type Op, encode, newRunId } from "./tokens.js";
 import type {
 	AnyCtx,
 	ExitReason,
@@ -156,7 +151,10 @@ export function resolveCurrentStep(
 	def: FlowDefinition,
 	ctx: AnyCtx,
 	record: OnboardingRecord,
-): { step: { id: string; config: StepConfig<unknown, string> } | null; advanced: boolean } {
+): {
+	step: { id: string; config: StepConfig<unknown, string> } | null;
+	advanced: boolean;
+} {
 	const idx = getStepIndex(def, record.stepId);
 	if (idx >= 0) return { step: def.steps[idx]!, advanced: false };
 
@@ -212,12 +210,33 @@ export interface FlowRuntime {
 	bot: { errorHandler?: (err: unknown, meta: object) => unknown } | null;
 }
 
+/**
+ * Per-user coordinator shared by all flows in a single `ctx.onboarding`
+ * namespace. The namespace builds one instance and passes it into every
+ * `makeFlowControl` so flows can (a) learn about each other and (b) trigger
+ * queue/preempt resumption when they finish — without reaching across plugins.
+ */
+export interface FlowCoordinator {
+	/** Is there another flow currently active or paused for this user? */
+	hasActiveOther(exceptFlowId: string): boolean;
+	/** Record a deferred start request. */
+	enqueueStart(entry: { flowId: string; from?: string }): Promise<void>;
+	/** Pause every other active flow, pushing each onto the preempt stack. */
+	pauseOthers(starterFlowId: string): Promise<void>;
+	/** Called by a flow after it hits `completed | exited | dismissed`. */
+	onFlowTerminal(
+		flowId: string,
+		terminal: "completed" | "exited" | "dismissed",
+	): Promise<void>;
+}
+
 export function makeFlowControl(
 	rt: FlowRuntime,
 	ctx: AnyCtx,
 	scopeKey: string,
 	record: OnboardingRecord | null,
 	globalRec: OnboardingRecord,
+	coord?: FlowCoordinator,
 ): FlowControl {
 	const def = rt.def;
 
@@ -256,15 +275,41 @@ export function makeFlowControl(
 		const status = local.status ?? "null";
 
 		if (status === "dismissed") return "dismissed";
+
+		// Paused → resume. Re-render the current step and reactivate. Triggered
+		// by the preempting flow finishing (via coord.onFlowTerminal) or by a
+		// user-initiated `.start()` on a paused flow.
+		if (status === "paused") {
+			await transition("active");
+			const cur = def.steps.find((s) => s.id === local.stepId);
+			if (cur) await safeRender(cur);
+			return "resumed";
+		}
+
+		// Concurrency coordination. Only kicks in when another flow is live
+		// AND we're not already active (active → handled by existing resume
+		// logic below — a flow can always restart itself).
+		let preempted = false;
+		if (status !== "active" && coord?.hasActiveOther(def.opts.id)) {
+			const mode = def.opts.concurrency;
+			if (mode === "queue") {
+				await coord.enqueueStart({ flowId: def.opts.id, from: opts?.from });
+				return "queued";
+			}
+			if (mode === "preempt") {
+				await coord.pauseOthers(def.opts.id);
+				preempted = true;
+			}
+			// `parallel` — fall through, start normally alongside others.
+		}
+
 		if (status === "completed" && !opts?.force) return "already-completed";
 		if (status === "active") {
 			if (def.opts.resumeOnStart && !opts?.force) return "already-active";
 			// fall through to restart
 		}
 
-		const fromIdx = opts?.from
-			? getStepIndex(def, opts.from)
-			: 0;
+		const fromIdx = opts?.from ? getStepIndex(def, opts.from) : 0;
 		const startIdx = fromIdx >= 0 ? fromIdx : 0;
 		const firstStep = def.steps[startIdx];
 		if (!firstStep) return "already-completed";
@@ -283,7 +328,13 @@ export function makeFlowControl(
 		);
 
 		try {
-			const out = await renderStep(def, ctx, firstStep, runId, local.data ?? {});
+			const out = await renderStep(
+				def,
+				ctx,
+				firstStep,
+				runId,
+				local.data ?? {},
+			);
 			if (out.messageId !== undefined) {
 				local.messageId = out.messageId;
 				await sync();
@@ -292,9 +343,15 @@ export function makeFlowControl(
 			forward(rt, e, "start.render");
 		}
 
+		if (preempted) return "preempted";
 		return status === "exited" || status === "completed" || status === "null"
 			? "started"
 			: "resumed";
+	}
+
+	async function pauseImpl(): Promise<void> {
+		if (local.status !== "active") return;
+		await transition("paused");
 	}
 
 	async function nextImpl(opts?: { from?: string }): Promise<NextResult> {
@@ -321,9 +378,13 @@ export function makeFlowControl(
 			return "completed";
 		}
 
-		await runStepHooks(def, ctx, local.stepId ?? null, nextStep.id, "next").catch(
-			(e) => forward(rt, e, "next.onStepChange"),
-		);
+		await runStepHooks(
+			def,
+			ctx,
+			local.stepId ?? null,
+			nextStep.id,
+			"next",
+		).catch((e) => forward(rt, e, "next.onStepChange"));
 		local.stepId = nextStep.id;
 		await sync();
 		await safeRender(nextStep);
@@ -354,7 +415,7 @@ export function makeFlowControl(
 	}
 
 	async function exitImpl(reason: ExitReason = "user"): Promise<void> {
-		if (local.status !== "active") return;
+		if (local.status !== "active" && local.status !== "paused") return;
 		const at = local.stepId ?? "";
 		await transition("exited");
 		if (def.hooks.onExit) {
@@ -363,6 +424,11 @@ export function makeFlowControl(
 			} catch (e) {
 				forward(rt, e, "exit.hook");
 			}
+		}
+		if (coord) {
+			await coord
+				.onFlowTerminal(def.opts.id, "exited")
+				.catch((e) => forward(rt, e, "exit.coord"));
 		}
 	}
 
@@ -375,6 +441,11 @@ export function makeFlowControl(
 			} catch (e) {
 				forward(rt, e, "dismiss.hook");
 			}
+		}
+		if (coord) {
+			await coord
+				.onFlowTerminal(def.opts.id, "dismissed")
+				.catch((e) => forward(rt, e, "dismiss.coord"));
 		}
 	}
 
@@ -393,11 +464,25 @@ export function makeFlowControl(
 				forward(rt, e, "complete.hook");
 			}
 		}
+		if (coord) {
+			await coord
+				.onFlowTerminal(def.opts.id, "completed")
+				.catch((e) => forward(rt, e, "complete.coord"));
+		}
 	}
 
-	async function safeRender(step: { id: string; config: StepConfig<unknown, string> }) {
+	async function safeRender(step: {
+		id: string;
+		config: StepConfig<unknown, string>;
+	}) {
 		try {
-			const out = await renderStep(def, ctx, step, local.runId ?? "", local.data ?? {});
+			const out = await renderStep(
+				def,
+				ctx,
+				step,
+				local.runId ?? "",
+				local.data ?? {},
+			);
 			if (out.messageId !== undefined) {
 				local.messageId = out.messageId;
 				await sync();
@@ -463,6 +548,7 @@ export function makeFlowControl(
 			dismissImpl,
 			undismissImpl,
 			completeImpl,
+			pauseImpl,
 			sync,
 		},
 	});
@@ -481,7 +567,10 @@ interface Internals {
 		id: string;
 		config: StepConfig<unknown, string>;
 	}) => Promise<void>;
-	startImpl: (opts?: { from?: string; force?: boolean }) => Promise<StartResult>;
+	startImpl: (opts?: {
+		from?: string;
+		force?: boolean;
+	}) => Promise<StartResult>;
 	nextImpl: (opts?: { from?: string }) => Promise<NextResult>;
 	gotoImpl: (id: string) => Promise<void>;
 	skipImpl: () => Promise<void>;
@@ -489,6 +578,7 @@ interface Internals {
 	dismissImpl: () => Promise<void>;
 	undismissImpl: () => Promise<void>;
 	completeImpl: () => Promise<void>;
+	pauseImpl: () => Promise<void>;
 	sync: () => Promise<void>;
 }
 
@@ -539,10 +629,7 @@ function forward(rt: FlowRuntime, err: unknown, op: string) {
 		}
 	}
 	if (typeof console !== "undefined" && typeof console.error === "function") {
-		console.error(
-			`[@gramio/onboarding][${rt.def.opts.id}] ${op}:`,
-			err,
-		);
+		console.error(`[@gramio/onboarding][${rt.def.opts.id}] ${op}:`, err);
 	}
 }
 

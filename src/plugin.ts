@@ -1,8 +1,10 @@
 import { Plugin } from "gramio";
 import type { FlowDefinition } from "./builder.js";
 import {
+	type FlowCoordinator,
 	type FlowRuntime,
 	getInternals,
+	globalKey,
 	handleCallback,
 	loadGlobal,
 	loadRecord,
@@ -22,11 +24,21 @@ import type {
 
 const NS_MARKER = Symbol.for("@gramio/onboarding/ns");
 
+// Module-level registry of every plugin's runtime, indexed by flowId. Used by
+// `coord.onFlowTerminal` (and `pauseOthers`) to bootstrap a control for a flow
+// whose `.derive` hook hasn't fired yet on the current ctx — gramio's
+// `.extend()` bundles each plugin's derive+on into an isolated chain, so when
+// welcome's callback handler runs, premium's derive may not have added its
+// control to the shared namespace yet.
+const flowRegistry = new Map<string, FlowRuntime>();
+
 interface InternalNamespace extends OnboardingNamespace {
 	[NS_MARKER]: true;
 	"~controls": Map<string, FlowControl>;
 	"~storages": Map<string, OnboardingStorage>;
 	"~scopeKeys": Map<string, string>;
+	"~coord": FlowCoordinator;
+	"~ctx": AnyCtx;
 }
 
 /** Module-level lazy-shared default storage so multi-flow setups Just Work. */
@@ -44,6 +56,7 @@ export function createOnboardingPlugin(def: FlowDefinition): Plugin {
 	const pluginName = `@gramio/onboarding[${flowId}]`;
 
 	const rt: FlowRuntime = { def, storage, bot: null };
+	flowRegistry.set(flowId, rt);
 
 	const plugin = new Plugin(pluginName)
 		.derive(DERIVE_EVENTS, async (ctx) => {
@@ -78,9 +91,15 @@ export function createOnboardingPlugin(def: FlowDefinition): Plugin {
 				await storage.set(`flow:${flowId}:${scopeKey}`, activeRecord);
 			}
 
-			const control = makeFlowControl(rt, c, scopeKey, activeRecord, globalRec);
-
 			const ns = upsertNamespace(c, storage, scopeKey, rt);
+			const control = makeFlowControl(
+				rt,
+				c,
+				scopeKey,
+				activeRecord,
+				globalRec,
+				ns["~coord"],
+			);
 			ns[flowId] = control;
 			ns["~controls"].set(flowId, control);
 			if (!ns.list.includes(flowId)) ns.list.push(flowId);
@@ -167,9 +186,11 @@ function upsertNamespace(
 	const existing = (ctx as { onboarding?: unknown }).onboarding as
 		| InternalNamespace
 		| undefined;
-	if (existing && existing[NS_MARKER]) {
+	if (existing?.[NS_MARKER]) {
 		existing["~storages"].set(rt.def.opts.id, storage);
 		existing["~scopeKeys"].set(rt.def.opts.id, scopeKey);
+		// Keep ctx fresh — each plugin's derive refreshes the pointer.
+		(existing as { "~ctx": AnyCtx })["~ctx"] = ctx;
 		return existing;
 	}
 
@@ -179,11 +200,134 @@ function upsertNamespace(
 	storages.set(rt.def.opts.id, storage);
 	scopeKeys.set(rt.def.opts.id, scopeKey);
 
+	// Multi-flow coordination lives on a single canonical storage — the first
+	// one registered with this namespace. In practice every plugin shares the
+	// same storage (explicit or the module-level default), so "canonical" is
+	// whichever is set first here. Different storages per flow would produce
+	// uncoordinated queues — documented tradeoff for Phase 4 MVP.
+	const canonicalStorage = storage;
+
+	// `ns` is defined below; the coord closures need a stable reference. We
+	// thread ctx via the namespace itself so each derive refresh updates it.
+	let nsRef: InternalNamespace | null = null;
+
+	async function bootstrapControl(
+		targetFlowId: string,
+	): Promise<FlowControl | undefined> {
+		if (!nsRef) return undefined;
+		const existing = controls.get(targetFlowId);
+		if (existing) return existing;
+		const targetRt = flowRegistry.get(targetFlowId);
+		if (!targetRt) return undefined;
+		const ctx2 = nsRef["~ctx"];
+		const sk = resolveScopeKey(targetRt.def, ctx2);
+		const [gl, rec] = await Promise.all([
+			loadGlobal(targetRt.storage, sk),
+			loadRecord(targetRt.storage, targetFlowId, sk),
+		]);
+		const ctrl = makeFlowControl(targetRt, ctx2, sk, rec, gl, coord);
+		controls.set(targetFlowId, ctrl);
+		storages.set(targetFlowId, targetRt.storage);
+		scopeKeys.set(targetFlowId, sk);
+		nsRef[targetFlowId] = ctrl;
+		if (!nsRef.list.includes(targetFlowId)) nsRef.list.push(targetFlowId);
+		return ctrl;
+	}
+
+	const coord: FlowCoordinator = {
+		hasActiveOther(exceptFlowId) {
+			for (const [id, ctrl] of controls) {
+				if (id === exceptFlowId) continue;
+				if (ctrl.status === "active" || ctrl.status === "paused") return true;
+			}
+			return false;
+		},
+
+		async enqueueStart(entry) {
+			const g = (await canonicalStorage.get(globalKey(scopeKey))) ?? {
+				kind: "global" as const,
+			};
+			const queue = [...(g.queue ?? []), entry];
+			await canonicalStorage.set(globalKey(scopeKey), { ...g, queue });
+		},
+
+		async pauseOthers(starterFlowId) {
+			// Pause already-registered active flows…
+			for (const [id, ctrl] of controls) {
+				if (id === starterFlowId) continue;
+				if (ctrl.status !== "active") continue;
+				await getInternals(ctrl).pauseImpl();
+				const g = (await canonicalStorage.get(globalKey(scopeKey))) ?? {
+					kind: "global" as const,
+				};
+				const stack = [...(g.preemptStack ?? []), { flowId: id }];
+				await canonicalStorage.set(globalKey(scopeKey), {
+					...g,
+					preemptStack: stack,
+				});
+			}
+			// …plus any flow that's active on disk but not yet derived on this ctx.
+			for (const [fid, frt] of flowRegistry) {
+				if (fid === starterFlowId) continue;
+				if (controls.has(fid)) continue;
+				if (!nsRef) continue;
+				const sk = resolveScopeKey(frt.def, nsRef["~ctx"]);
+				const rec = await loadRecord(frt.storage, fid, sk);
+				if (rec?.status !== "active") continue;
+				const ctrl = await bootstrapControl(fid);
+				if (!ctrl) continue;
+				await getInternals(ctrl).pauseImpl();
+				const g = (await canonicalStorage.get(globalKey(scopeKey))) ?? {
+					kind: "global" as const,
+				};
+				const stack = [...(g.preemptStack ?? []), { flowId: fid }];
+				await canonicalStorage.set(globalKey(scopeKey), {
+					...g,
+					preemptStack: stack,
+				});
+			}
+		},
+
+		async onFlowTerminal(finishedFlowId, _terminal) {
+			const g = (await canonicalStorage.get(globalKey(scopeKey))) ?? {
+				kind: "global" as const,
+			};
+
+			// 1. Preempt stack wins — LIFO resume of the flow that was paused.
+			const stack = g.preemptStack ?? [];
+			if (stack.length > 0) {
+				const top = stack[stack.length - 1]!;
+				await canonicalStorage.set(globalKey(scopeKey), {
+					...g,
+					preemptStack: stack.slice(0, -1),
+				});
+				const ctrl =
+					controls.get(top.flowId) ?? (await bootstrapControl(top.flowId));
+				if (ctrl) await ctrl.start();
+				return;
+			}
+
+			// 2. Otherwise drain the FIFO queue.
+			const queue = g.queue ?? [];
+			if (queue.length === 0) return;
+			const [head, ...rest] = queue;
+			await canonicalStorage.set(globalKey(scopeKey), { ...g, queue: rest });
+			if (!head || head.flowId === finishedFlowId) return;
+			const ctrl =
+				controls.get(head.flowId) ?? (await bootstrapControl(head.flowId));
+			if (ctrl) {
+				await ctrl.start(head.from ? { from: head.from } : undefined);
+			}
+		},
+	};
+
 	const ns: InternalNamespace = {
 		[NS_MARKER]: true,
 		"~controls": controls,
 		"~storages": storages,
 		"~scopeKeys": scopeKeys,
+		"~coord": coord,
+		"~ctx": ctx,
 		list: [],
 
 		get active() {
@@ -217,7 +361,8 @@ function upsertNamespace(
 						disabled: true,
 					});
 					const c = controls.get(id);
-					if (c) getInternals(c).globalLocal = { kind: "global", disabled: true };
+					if (c)
+						getInternals(c).globalLocal = { kind: "global", disabled: true };
 				}),
 			);
 		},
@@ -231,7 +376,8 @@ function upsertNamespace(
 						disabled: false,
 					});
 					const c = controls.get(id);
-					if (c) getInternals(c).globalLocal = { kind: "global", disabled: false };
+					if (c)
+						getInternals(c).globalLocal = { kind: "global", disabled: false };
 				}),
 			);
 		},
@@ -241,6 +387,7 @@ function upsertNamespace(
 		},
 	};
 
+	nsRef = ns;
 	return ns;
 }
 

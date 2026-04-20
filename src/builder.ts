@@ -25,10 +25,7 @@ export interface FlowHooks {
 		ctx: AnyCtx,
 		meta: { data: Record<string, unknown> },
 	) => unknown;
-	onExit?: (
-		ctx: AnyCtx,
-		meta: { at: string; reason: ExitReason },
-	) => unknown;
+	onExit?: (ctx: AnyCtx, meta: { at: string; reason: ExitReason }) => unknown;
 	onDismiss?: (ctx: AnyCtx, meta: { at: string }) => unknown;
 	onStepChange?: (
 		ctx: AnyCtx,
@@ -51,17 +48,11 @@ export interface OnboardingBuilder<Data, Steps extends string> {
 	): OnboardingBuilder<Data, Steps | Id>;
 
 	onComplete(
-		handler: (
-			ctx: AnyCtx,
-			meta: { data: Record<string, unknown> },
-		) => unknown,
+		handler: (ctx: AnyCtx, meta: { data: Record<string, unknown> }) => unknown,
 	): OnboardingBuilder<Data, Steps>;
 
 	onExit(
-		handler: (
-			ctx: AnyCtx,
-			meta: { at: Steps; reason: ExitReason },
-		) => unknown,
+		handler: (ctx: AnyCtx, meta: { at: Steps; reason: ExitReason }) => unknown,
 	): OnboardingBuilder<Data, Steps>;
 
 	onDismiss(
@@ -69,10 +60,7 @@ export interface OnboardingBuilder<Data, Steps extends string> {
 	): OnboardingBuilder<Data, Steps>;
 
 	onStepChange(
-		handler: (
-			ctx: AnyCtx,
-			meta: { from: Steps | null; to: Steps },
-		) => unknown,
+		handler: (ctx: AnyCtx, meta: { from: Steps | null; to: Steps }) => unknown,
 	): OnboardingBuilder<Data, Steps>;
 
 	onMissingStep(

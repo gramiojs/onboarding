@@ -24,7 +24,11 @@
  */
 
 export { createOnboarding } from "./builder.js";
-export type { OnboardingBuilder, FlowDefinition, FlowHooks } from "./builder.js";
+export type {
+	OnboardingBuilder,
+	FlowDefinition,
+	FlowHooks,
+} from "./builder.js";
 
 export { memoryStorage } from "./storage/memory.js";
 

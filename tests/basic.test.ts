@@ -3,9 +3,9 @@ import { TelegramTestEnvironment } from "@gramio/test";
 import type { TelegramInlineKeyboardMarkup } from "@gramio/types";
 import { Bot } from "gramio";
 import {
+	type OnboardingNamespace,
 	createOnboarding,
 	memoryStorage,
-	type OnboardingNamespace,
 } from "../src/index.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,10 @@ const lastSentText = (env: TelegramTestEnvironment): string | undefined => {
 const buildBasicBot = () => {
 	const storage = memoryStorage();
 	const welcome = createOnboarding({ id: "welcome", storage })
-		.step("hi", { text: "Hi! Press next to continue.", buttons: ["next", "exit"] })
+		.step("hi", {
+			text: "Hi! Press next to continue.",
+			buttons: ["next", "exit"],
+		})
 		.step("links", { text: "Send any link!", buttons: ["next", "dismiss"] })
 		.step("done", { text: "All set!" })
 		.onComplete((ctx) => ctx.send("welcome aboard"))
@@ -92,8 +95,7 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const sent = env.apiCalls.filter((c) => c.method === "sendMessage");
 		const onboardingSend = sent.find(
 			(c) =>
-				(c.params as { text?: string }).text ===
-				"Hi! Press next to continue.",
+				(c.params as { text?: string }).text === "Hi! Press next to continue.",
 		);
 		expect(onboardingSend).toBeDefined();
 		const buttons = flatButtons(
@@ -231,8 +233,7 @@ describe("@gramio/onboarding — Phase 1 inline flow", () => {
 		const distinct = new Set(
 			env.apiCalls
 				.filter(
-					(c) =>
-						c.method === "sendMessage" || c.method === "editMessageText",
+					(c) => c.method === "sendMessage" || c.method === "editMessageText",
 				)
 				.map((c) => (c.params as { text?: string }).text),
 		);
@@ -287,7 +288,8 @@ describe("@gramio/onboarding — namespace surface", () => {
 
 		let observed: string | undefined;
 		bot.command("status", (ctx) => {
-			const ns = (ctx as unknown as { onboarding: OnboardingNamespace }).onboarding;
+			const ns = (ctx as unknown as { onboarding: OnboardingNamespace })
+				.onboarding;
 			const flow = ns.flow("welcome");
 			observed = flow?.status;
 			return ctx.send(`status:${observed}`);
@@ -318,7 +320,8 @@ describe("@gramio/onboarding — namespace surface", () => {
 			.extend(b)
 			.command("inspect", (ctx) => {
 				captured = [
-					...(ctx as unknown as { onboarding: OnboardingNamespace }).onboarding.list,
+					...(ctx as unknown as { onboarding: OnboardingNamespace }).onboarding
+						.list,
 				];
 				return ctx.send("ok");
 			});

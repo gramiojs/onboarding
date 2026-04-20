@@ -49,8 +49,9 @@ src/
 - **Phase 1** — inline `text + buttons` steps, memory storage, `ctx.onboarding.<flow>.start/next/exit/complete/skip/goto`, callback handler with runId, `onMissingStep` fallback, fire-and-forget wrapper.
 - **Phase 2** — `step.view` rendering via `ctx.render`, `this.onboarding` injection through opt-in `withOnboardingGlobals(...)` helper that uses `AsyncLocalStorage` to scope tokens per render call.
 - **Phase 3** — `advanceOn(ctx) => boolean` middleware installed per-plugin on `message` updates: while the flow is active it evaluates the current step's predicate, advances via `control.next({ from })`, and (with `passthrough: true`, the default) forwards the update to business handlers. `passthrough: false` suppresses forwarding only when a match actually fired. Programmatic `ctx.onboarding.<flow>.next({ from })` returns `NextResult` (`advanced | completed | inactive | step-mismatch`).
+- **Phase 4** — multi-flow concurrency. Per-user `FlowCoordinator` owns a shared FIFO queue + LIFO preempt stack persisted on the `global:<scopeKey>` record. `concurrency: "queue"` (default) enqueues starts that arrive while another flow is live and auto-starts the next on terminal. `concurrency: "preempt"` pauses active flows (pushing them onto the preempt stack) and resumes them LIFO when the preempting flow ends. `concurrency: "parallel"` disables coordination for that flow. `StartResult` gained `"queued"` and `"preempted"` codes; `FlowStatus` gained internal `"paused"`. A module-level `flowRegistry` lets the coordinator bootstrap a control for a flow whose `.derive` hook hasn't fired yet on the current ctx — gramio's `.extend()` bundles each plugin's derive+on into an isolated middleware chain, so controls can still be missing from the shared namespace at the moment an earlier plugin's callback handler fires `onFlowTerminal`.
 
-Future phases (4-8) are described in the spec.
+Future phases (5-8) are described in the spec.
 
 ## Code Style
 

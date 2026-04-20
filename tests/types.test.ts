@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
 	type ButtonKind,
-	createOnboarding,
 	type ExitReason,
 	type FlowControl,
 	type FlowStatus,
@@ -15,6 +14,7 @@ import {
 	type ScopeControls,
 	type StartResult,
 	type StepConfig,
+	createOnboarding,
 	withOnboardingGlobals,
 } from "../src/index.js";
 
@@ -45,7 +45,12 @@ describe("Public types are exported", () => {
 			"dismissed",
 			"paused",
 		];
-		const _exitReasons: ExitReason[] = ["user", "timeout", "preempt", "exitAll"];
+		const _exitReasons: ExitReason[] = [
+			"user",
+			"timeout",
+			"preempt",
+			"exitAll",
+		];
 		const _leaveReasons: LeaveReason[] = [
 			"next",
 			"skip",
@@ -103,7 +108,9 @@ describe("Builder Steps accumulation", () => {
 			.step("done", { text: "3" });
 
 		// Type-level: extract Steps from OnboardingBuilder<Data, Steps>
-		type Extract<T> = T extends OnboardingBuilder<infer _D, infer S> ? S : never;
+		type Extract<T> = T extends OnboardingBuilder<infer _D, infer S>
+			? S
+			: never;
 		type Steps = Extract<typeof b>;
 
 		const _ok1: Steps = "hi";
@@ -118,7 +125,9 @@ describe("Builder Steps accumulation", () => {
 
 	it("createOnboarding starts with Steps = never", () => {
 		const b = createOnboarding({ id: "t2" });
-		type Extract<T> = T extends OnboardingBuilder<infer _D, infer S> ? S : never;
+		type Extract<T> = T extends OnboardingBuilder<infer _D, infer S>
+			? S
+			: never;
 		type Steps = Extract<typeof b>;
 
 		const _check: [Steps] extends [never] ? true : false = true;
@@ -508,8 +517,9 @@ describe("createOnboarding<Data> generic", () => {
 		//
 		// This `Data` shape compiles but the type is *unused* at the boundary —
 		// the test below documents the floor so future work can tighten it.
-		const _b = createOnboarding<{ name: string; age: number }>({ id: "g1" })
-			.step("hi", { text: "hello" });
+		const _b = createOnboarding<{ name: string; age: number }>({
+			id: "g1",
+		}).step("hi", { text: "hello" });
 
 		void _b;
 	});

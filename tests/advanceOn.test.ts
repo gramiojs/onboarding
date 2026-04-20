@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { TelegramTestEnvironment } from "@gramio/test";
 import { Bot } from "gramio";
 import {
-	createOnboarding,
-	memoryStorage,
 	type NextResult,
 	type OnboardingNamespace,
+	createOnboarding,
+	memoryStorage,
 } from "../src/index.js";
 
 /**
@@ -34,16 +34,17 @@ const lastText = (env: TelegramTestEnvironment): string | undefined => {
 
 const allTexts = (env: TelegramTestEnvironment): string[] =>
 	env.apiCalls
-		.filter(
-			(c) => c.method === "sendMessage" || c.method === "editMessageText",
-		)
+		.filter((c) => c.method === "sendMessage" || c.method === "editMessageText")
 		.map((c) => (c.params as { text?: string }).text ?? "");
 
 const URL_RE = /https?:\/\/\S+/;
 
 describe("@gramio/onboarding — Phase 3 advanceOn middleware", () => {
 	it("advanceOn matches → step advances AND business handler still runs (passthrough default)", async () => {
-		const welcome = createOnboarding({ id: "welcome", storage: memoryStorage() })
+		const welcome = createOnboarding({
+			id: "welcome",
+			storage: memoryStorage(),
+		})
 			.step("hi", { text: "Hi!", buttons: ["next"] })
 			.step("links", {
 				text: "Send me any link!",
@@ -58,8 +59,11 @@ describe("@gramio/onboarding — Phase 3 advanceOn middleware", () => {
 
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", async (ctx) => {
-			await (ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start();
+			await (
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start();
 		});
 		// Business handler that reacts to the link — MUST still run after the
 		// advanceOn match so the user sees the "Downloading…" reply.
@@ -107,8 +111,11 @@ describe("@gramio/onboarding — Phase 3 advanceOn middleware", () => {
 		let businessHandlerFired = false;
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", (ctx) =>
-			(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start(),
+			(
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start(),
 		);
 		bot.on("message", (ctx, next) => {
 			// Command messages still reach here via `next()` chain, so filter.
@@ -175,8 +182,11 @@ describe("@gramio/onboarding — Phase 3 advanceOn middleware", () => {
 
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", (ctx) =>
-			(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start(),
+			(
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start(),
 		);
 		bot.on("message", (ctx) => ctx.send("ack"));
 
@@ -206,8 +216,11 @@ describe("@gramio/onboarding — Phase 3 next({ from }) programmatic advance", (
 		let nextResult: NextResult | undefined;
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", (ctx) =>
-			(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start(),
+			(
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start(),
 		);
 		bot.on("message", async (ctx, next) => {
 			const text = (ctx as { text?: string }).text;
@@ -247,8 +260,11 @@ describe("@gramio/onboarding — Phase 3 next({ from }) programmatic advance", (
 		let result: NextResult | undefined;
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", (ctx) =>
-			(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start(),
+			(
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start(),
 		);
 		bot.command("probe", async (ctx) => {
 			result = (await (
@@ -269,11 +285,11 @@ describe("@gramio/onboarding — Phase 3 next({ from }) programmatic advance", (
 
 		expect(result).toBe("step-mismatch");
 		expect(
-			(env as unknown as {
-				lastBotMessage(): { payload: { text: string } } | undefined;
-			})
-				.lastBotMessage()
-				?.payload.text,
+			(
+				env as unknown as {
+					lastBotMessage(): { payload: { text: string } } | undefined;
+				}
+			).lastBotMessage()?.payload.text,
 		).toBe("result:step-mismatch");
 	});
 

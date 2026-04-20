@@ -28,10 +28,7 @@ export async function renderView(
 	await runWithOnboardingTokens(tokens, () => render(view, ...args));
 }
 
-function resolveView(
-	step: StepConfig<unknown, string>,
-	ctx: AnyCtx,
-): unknown {
+function resolveView(step: StepConfig<unknown, string>, ctx: AnyCtx): unknown {
 	if (typeof step.view === "function") {
 		return (step.view as (ctx: AnyCtx) => unknown)(ctx);
 	}
@@ -58,5 +55,8 @@ export function shouldRenderViaViews(
 	ctx: AnyCtx,
 	step: StepConfig<unknown, string>,
 ): boolean {
-	return Boolean(step.view) && typeof (ctx as { render?: unknown }).render === "function";
+	return (
+		Boolean(step.view) &&
+		typeof (ctx as { render?: unknown }).render === "function"
+	);
 }

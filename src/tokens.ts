@@ -16,13 +16,7 @@ import type { ButtonKind } from "./types.js";
 export const PREFIX = "onb";
 const SEP = ":";
 
-export type Op =
-	| "next"
-	| "skip"
-	| "exit"
-	| "dismiss"
-	| "exitAll"
-	| "goto";
+export type Op = "next" | "skip" | "exit" | "dismiss" | "exitAll" | "goto";
 
 export interface DecodedToken {
 	op: Op;

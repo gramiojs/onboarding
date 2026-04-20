@@ -4,9 +4,9 @@ import type { TelegramInlineKeyboardMarkup } from "@gramio/types";
 import { initViewsBuilder } from "@gramio/views";
 import { Bot, InlineKeyboard } from "gramio";
 import {
+	type OnboardingViewCtx,
 	createOnboarding,
 	memoryStorage,
-	type OnboardingViewCtx,
 	withOnboardingGlobals,
 } from "../src/index.js";
 
@@ -52,8 +52,11 @@ const buildBot = () => {
 		}));
 
 	bot.command("start", (ctx) =>
-		(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-			.onboarding.welcome.start(),
+		(
+			ctx as unknown as {
+				onboarding: { welcome: { start(): Promise<unknown> } };
+			}
+		).onboarding.welcome.start(),
 	);
 
 	return { bot, storage };
@@ -71,7 +74,9 @@ describe("@gramio/onboarding — Phase 2 views integration", () => {
 		expect(sent).toBeDefined();
 		expect((sent!.params as { text?: string }).text).toBe("Hi, hi!");
 
-		const buttons = flatButtons((sent!.params as { reply_markup: unknown }).reply_markup);
+		const buttons = flatButtons(
+			(sent!.params as { reply_markup: unknown }).reply_markup,
+		);
 		expect(buttons.map((b) => b.text)).toEqual(["Continue", "Skip tour"]);
 		// Tokens must respect the 64-byte cap.
 		for (const btn of buttons) {
@@ -97,9 +102,11 @@ describe("@gramio/onboarding — Phase 2 views integration", () => {
 		);
 
 		bot.command("probe", async (ctx) => {
-			await (ctx as unknown as {
-				render: (v: typeof probeView) => Promise<unknown>;
-			}).render(probeView);
+			await (
+				ctx as unknown as {
+					render: (v: typeof probeView) => Promise<unknown>;
+				}
+			).render(probeView);
 		});
 
 		const env = new TelegramTestEnvironment(bot);
@@ -125,8 +132,11 @@ describe("@gramio/onboarding — Phase 2 views integration", () => {
 
 		const bot = new Bot("test_token").extend(welcome);
 		bot.command("start", (ctx) =>
-			(ctx as unknown as { onboarding: { welcome: { start(): Promise<unknown> } } })
-				.onboarding.welcome.start(),
+			(
+				ctx as unknown as {
+					onboarding: { welcome: { start(): Promise<unknown> } };
+				}
+			).onboarding.welcome.start(),
 		);
 
 		const env = new TelegramTestEnvironment(bot);

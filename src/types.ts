@@ -89,6 +89,8 @@ export interface OnboardingRecord {
 	disabled?: boolean;
 	/** kind === "global": pending starts when concurrency = "queue" (Phase 4) */
 	queue?: { flowId: string; from?: string }[];
+	/** kind === "global": LIFO stack of flows paused by a preempt (Phase 4) */
+	preemptStack?: { flowId: string }[];
 }
 
 /** Map of all keys we write to the underlying Storage. */
