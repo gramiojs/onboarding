@@ -341,34 +341,85 @@ describe("my adapter", () => {
 
 ## Views integration
 
-If you pass `step.view` and `@gramio/views` is registered on the bot, the plugin calls `ctx.render(view, args)` instead of the inline renderer. Inside the view, `this.onboarding` exposes the token set:
+If you pass `step.view` and `@gramio/views` is wired on the bot, the plugin delegates rendering to `ctx.render(view, args)` instead of using the built-in inline renderer. Inside the view, the current step's token bundle is available as `this.onboarding`:
 
 ```ts
 interface OnboardingViewCtx {
     flowId: string;
     stepId: string;
     data: Record<string, unknown>;
-    next: string | undefined;      // callback_data; undefined if control disabled
+    next: string | undefined;      // callback_data; undefined when control is disabled
     skip: string | undefined;
     exit: string;                  // always defined
     dismiss: string | undefined;
-    exitAll: string;               // always defined
+    exitAll: string;               // always defined (nuclear)
     goto: (target: string) => string;
 }
 ```
 
-Thread it into the view with `withOnboardingGlobals()`:
+### Wire it up
+
+Declare a `Globals` shape that includes `onboarding`, then register `buildRender` in a derive, wrapping your globals with `withOnboardingGlobals()`:
 
 ```ts
-import { withOnboardingGlobals } from "@gramio/onboarding";
+import { Bot, InlineKeyboard } from "gramio";
+import { initViewsBuilder } from "@gramio/views";
+import {
+    createOnboarding,
+    withOnboardingGlobals,
+    type OnboardingViewCtx,
+} from "@gramio/onboarding";
 
-const bot = new Bot(BOT_TOKEN)
-    .extend(views([welcomeView]))
+interface Globals {
+    greeting: string;
+    onboarding: OnboardingViewCtx | undefined;
+}
+
+const defineView = initViewsBuilder<Globals>();
+
+const welcomeView = defineView().render(function () {
+    const tokens = this.onboarding;
+    const kb = new InlineKeyboard();
+    if (tokens?.next) kb.text("Continue", tokens.next);
+    if (tokens?.exit) kb.row().text("Skip tour", tokens.exit);
+    return this.response
+        .text(`${this.greeting}, ${tokens?.stepId ?? "?"}!`)
+        .keyboard(kb);
+});
+
+const welcome = createOnboarding({ id: "welcome" })
+    .step("hi",   { view: welcomeView })
+    .step("done", { text: "All set!" })
+    .build();
+
+const bot = new Bot(process.env.BOT_TOKEN!)
     .extend(welcome)
-    .derive("message", withOnboardingGlobals());
+    .derive(["message", "callback_query"], (ctx) => ({
+        render: defineView.buildRender(
+            ctx,
+            withOnboardingGlobals({ greeting: "Hi" }),
+        ),
+    }));
 ```
 
-`withOnboardingGlobals` uses `AsyncLocalStorage` to scope tokens per-render call — safe under concurrent updates.
+`withOnboardingGlobals({ greeting: "Hi" })` returns a **thunk** — `() => ({ greeting, onboarding })` — consumed by `buildRender`'s lazy-globals path (`@gramio/views ≥ 0.2`). The thunk is re-evaluated on every `ctx.render(...)`, so if middleware advances the flow between `.derive()` and the render call, the view sees the *new* step's tokens — no stale snapshots.
+
+Outside an onboarding-driven render (e.g. you call `ctx.render(someOtherView)` directly from a command handler), `this.onboarding` is simply `undefined`.
+
+### Lazy fields, not just `onboarding`
+
+`buildRender` also accepts plain objects with getters — useful when other globals need the same fresh-per-render treatment:
+
+```ts
+.derive(["message", "callback_query"], (ctx) => ({
+    render: defineView.buildRender(ctx, withOnboardingGlobals({
+        userId: ctx.from!.id,
+        get locale() { return ctx.session.locale; },   // evaluated per render
+    })),
+}));
+```
+
+Because `withOnboardingGlobals` uses object spread, the getters survive to `createContext` — no `Object.defineProperty` gymnastics required.
 
 ---
 
