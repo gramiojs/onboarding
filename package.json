@@ -1,0 +1,64 @@
+{
+	"name": "@gramio/onboarding",
+	"version": "0.0.1",
+	"description": "Declarative user-onboarding tutorials for GramIO bots",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		"import": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"require": {
+			"types": "./dist/index.d.cts",
+			"default": "./dist/index.cjs"
+		}
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gramiojs/onboarding.git"
+	},
+	"type": "module",
+	"homepage": "https://github.com/gramiojs/onboarding",
+	"readme": "https://gramio.dev/plugins/official/onboarding",
+	"scripts": {
+		"prepublishOnly": "bunx pkgroll",
+		"check": "tsc --noEmit",
+		"test": "bun test",
+		"lint": "biome check"
+	},
+	"keywords": [
+		"gramio",
+		"gramio-plugin",
+		"telegram-bot-api",
+		"telegram-bot",
+		"onboarding",
+		"tutorial",
+		"walkthrough",
+		"intro"
+	],
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@gramio/test": "^0.3.1",
+		"@gramio/views": "^0.2.0",
+		"@types/bun": "^1.3.10",
+		"gramio": "^0.9.0",
+		"pkgroll": "^2.27.0",
+		"typescript": "^5.7.2"
+	},
+	"peerDependencies": {
+		"gramio": ">=0.7.0",
+		"@gramio/views": ">=0.2.0"
+	},
+	"peerDependenciesMeta": {
+		"@gramio/views": {
+			"optional": true
+		}
+	},
+	"files": ["dist"],
+	"license": "MIT",
+	"dependencies": {
+		"@gramio/storage": "^2.0.0"
+	}
+}
