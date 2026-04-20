@@ -48,8 +48,9 @@ src/
 
 - **Phase 1** — inline `text + buttons` steps, memory storage, `ctx.onboarding.<flow>.start/next/exit/complete/skip/goto`, callback handler with runId, `onMissingStep` fallback, fire-and-forget wrapper.
 - **Phase 2** — `step.view` rendering via `ctx.render`, `this.onboarding` injection through opt-in `withOnboardingGlobals(...)` helper that uses `AsyncLocalStorage` to scope tokens per render call.
+- **Phase 3** — `advanceOn(ctx) => boolean` middleware installed per-plugin on `message` updates: while the flow is active it evaluates the current step's predicate, advances via `control.next({ from })`, and (with `passthrough: true`, the default) forwards the update to business handlers. `passthrough: false` suppresses forwarding only when a match actually fired. Programmatic `ctx.onboarding.<flow>.next({ from })` returns `NextResult` (`advanced | completed | inactive | step-mismatch`).
 
-Future phases (3-8) are described in the spec.
+Future phases (4-8) are described in the spec.
 
 ## Code Style
 

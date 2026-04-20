@@ -87,6 +87,41 @@ export function createOnboardingPlugin(def: FlowDefinition): Plugin {
 
 			return { onboarding: ns as unknown as OnboardingNamespace };
 		})
+		.on("message", async (ctx, next) => {
+			const c = ctx as unknown as AnyCtx;
+			const ns = (c as { onboarding?: InternalNamespace }).onboarding;
+			const control = ns?.["~controls"].get(flowId);
+
+			// Nothing to do if this flow isn't currently active for the user.
+			if (!control || control.status !== "active") return next();
+
+			const stepId = control.currentStep;
+			if (!stepId) return next();
+			const step = def.steps.find((s) => s.id === stepId);
+			if (!step?.config.advanceOn) return next();
+
+			let matched = false;
+			try {
+				matched = await step.config.advanceOn(c);
+			} catch (err) {
+				rt.bot?.errorHandler?.(err, {
+					source: "onboarding",
+					flowId,
+					op: "advanceOn",
+				});
+			}
+
+			if (matched) {
+				// `from` guard protects against races: if the step already advanced
+				// (e.g. via a parallel button click), we skip the duplicate next().
+				await control.next({ from: stepId });
+			}
+
+			// Default: let the update flow to business handlers. `passthrough: false`
+			// only suppresses forwarding when we actually advanced.
+			if (matched && step.config.passthrough === false) return;
+			return next();
+		})
 		.on("callback_query", async (ctx, next) => {
 			const c = ctx as unknown as AnyCtx;
 			const data = (c as { data?: string }).data;
