@@ -6,6 +6,7 @@ import {
 	getInternals,
 	globalKey,
 	handleCallback,
+	isEligibleForStep,
 	loadGlobal,
 	loadRecord,
 	makeFlowControl,
@@ -103,6 +104,24 @@ export function createOnboardingPlugin(def: FlowDefinition): Plugin {
 			ns[flowId] = control;
 			ns["~controls"].set(flowId, control);
 			if (!ns.list.includes(flowId)) ns.list.push(flowId);
+
+			// Phase 5: if a prior advance left a step pending (ineligible scope
+			// at that time), re-attempt rendering now that we have a fresh ctx.
+			// `safeRender` itself re-checks eligibility, so a still-ineligible
+			// update is a no-op that keeps pendingStepId intact.
+			if (activeRecord?.status === "active" && activeRecord.pendingStepId) {
+				const pending = def.steps.find(
+					(s) => s.id === activeRecord.pendingStepId,
+				);
+				if (pending && isEligibleForStep(c, pending.config)) {
+					const internals = getInternals(control);
+					internals.local = {
+						...internals.local,
+						stepId: pending.id,
+					};
+					await internals.renderStep(pending);
+				}
+			}
 
 			return { onboarding: ns as unknown as OnboardingNamespace };
 		})

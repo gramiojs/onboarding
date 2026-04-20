@@ -106,6 +106,27 @@ export function effectiveControls(
 	return { ...base, ...flowOverride, ...stepOverride };
 }
 
+/**
+ * Does the current ctx's chat scope match the step's `renderIn` constraint?
+ * `renderIn: undefined | "any"` is always eligible; "dm" / "group" check
+ * `detectScope(ctx)`; a function is called with ctx.
+ */
+export function isEligibleForStep(
+	ctx: AnyCtx,
+	step: StepConfig<unknown, string>,
+): boolean {
+	const r = step.renderIn;
+	if (!r || r === "any") return true;
+	if (typeof r === "function") {
+		try {
+			return Boolean(r(ctx));
+		} catch {
+			return false;
+		}
+	}
+	return detectScope(ctx) === r;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tokens for view-injected ctx
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +208,15 @@ async function renderStep(
 	step: { id: string; config: StepConfig<unknown, string> },
 	runId: string,
 	data: Record<string, unknown>,
-): Promise<{ messageId?: number }> {
+): Promise<{ messageId?: number; pending?: boolean }> {
+	// Phase 5: if the current ctx isn't in the eligible scope, defer rendering
+	// until an eligible update arrives. The caller marks `pendingStepId` on
+	// the record; the derive hook (in plugin.ts) re-attempts the render on
+	// every inbound update that finds an eligible ctx for the pending step.
+	if (!isEligibleForStep(ctx, step.config)) {
+		return { pending: true };
+	}
+
 	const scope = detectScope(ctx);
 	const tokens = buildTokens(def, step.config, step.id, runId, data, scope);
 
@@ -335,8 +364,14 @@ export function makeFlowControl(
 				runId,
 				local.data ?? {},
 			);
-			if (out.messageId !== undefined) {
+			if (out.pending) {
+				local.pendingStepId = firstStep.id;
+				await sync();
+			} else if (out.messageId !== undefined) {
 				local.messageId = out.messageId;
+				if (local.pendingStepId === firstStep.id) {
+					local.pendingStepId = undefined;
+				}
 				await sync();
 			}
 		} catch (e) {
@@ -387,10 +422,12 @@ export function makeFlowControl(
 		).catch((e) => forward(rt, e, "next.onStepChange"));
 		local.stepId = nextStep.id;
 		await sync();
-		await safeRender(nextStep);
+		const r = await safeRender(nextStep);
 
-		// Terminal step has no successor — show its message, then complete.
-		if (idx + 2 >= def.steps.length) {
+		// Terminal step rendered — complete. If render was deferred (scope
+		// mismatch), stay "advanced": the pending re-render via derive hook
+		// will reach this path again and call completeImpl then.
+		if (idx + 2 >= def.steps.length && !r.pending) {
 			await completeImpl();
 			return "completed";
 		}
@@ -474,7 +511,7 @@ export function makeFlowControl(
 	async function safeRender(step: {
 		id: string;
 		config: StepConfig<unknown, string>;
-	}) {
+	}): Promise<{ pending: boolean }> {
 		try {
 			const out = await renderStep(
 				def,
@@ -483,12 +520,24 @@ export function makeFlowControl(
 				local.runId ?? "",
 				local.data ?? {},
 			);
+			if (out.pending) {
+				// Scope-ineligible: stash the step id so the next eligible update
+				// re-attempts the render via the plugin's derive hook.
+				local.pendingStepId = step.id;
+				await sync();
+				return { pending: true };
+			}
+			if (local.pendingStepId === step.id) {
+				local.pendingStepId = undefined;
+			}
 			if (out.messageId !== undefined) {
 				local.messageId = out.messageId;
-				await sync();
 			}
+			await sync();
+			return { pending: false };
 		} catch (e) {
 			forward(rt, e, "render");
+			return { pending: false };
 		}
 	}
 
