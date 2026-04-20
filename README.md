@@ -412,8 +412,6 @@ bunx biome check    # Lint
 
 Tests live next to the phase they exercise — `tests/basic.test.ts`, `tests/advanceOn.test.ts`, `tests/concurrency.test.ts`, `tests/scope.test.ts`, `tests/optOut.test.ts`, `tests/storage-contract.test.ts`, etc. They drive a real `Bot` through `@gramio/test`'s `TelegramTestEnvironment` — no unit-test mocking; the tests are what a user would observe.
 
-The design spec — rationale, open questions, and the full phase roadmap — lives at `documentation/ideas/onboarding-plugin.md` in the [documentation repo](https://github.com/gramiojs/documentation).
-
 ---
 
 ## License

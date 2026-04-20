@@ -6,7 +6,7 @@ Guidance for Claude Code when working on `@gramio/onboarding`.
 
 `@gramio/onboarding` is a plugin for [GramIO](https://gramio.dev) that implements **declarative user tutorials**: walk a user through bot features step by step, advancing on a button click or on a real user action. Steps are declared as a script; the plugin handles state, callbacks, scope (DM vs group), and refusal semantics (skip / exit / dismiss / disable-all).
 
-The full design spec lives in `documentation/ideas/onboarding-plugin.md` (the documentation repo). Read it before making non-trivial changes.
+The full design spec lives at `SPEC.md` in the repo root. Read it before making non-trivial changes.
 
 ## Development Commands
 
