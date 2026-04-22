@@ -43,11 +43,11 @@ jobs:
               run: bun test
 
             - name: Publish package to JSR
-              if: ${{ github.event.inputs.publish_to_jsr }}
+              if: ${{ github.event.inputs.publish_to_jsr == 'true' }}
               run: bunx jsr publish --allow-dirty --allow-slow-types
 
             - name: Publish package to NPM
-              if: ${{ github.event.inputs.publish_to_npm }}
+              if: ${{ github.event.inputs.publish_to_npm == 'true' }}
               run: bun publish --access public
               env:
                   NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
