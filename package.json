@@ -1,6 +1,6 @@
 {
 	"name": "@gramio/onboarding",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Declarative user-onboarding tutorials for GramIO bots",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
